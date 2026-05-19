@@ -1,0 +1,1432 @@
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+<meta charset="UTF-8">
+<title>oBasketu Editor — Výsledek zápasu</title>
+<style>
+  :root {
+    --bg-app: #0f1115;
+    --bg-panel: #161922;
+    --bg-panel-2: #1d2230;
+    --bg-input: #0b0e14;
+    --border: #2a3041;
+    --border-strong: #3a4258;
+    --text: #e6e8ee;
+    --text-dim: #8b92a5;
+    --text-muted: #5a6275;
+    --accent: #ff6b1a;
+    --accent-2: #6b4dff;
+    --danger: #ef4444;
+    --success: #22c55e;
+    --canvas-bg: #000;
+    font-family: -apple-system, "Segoe UI", system-ui, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; padding: 0; height: 100vh; overflow: hidden;
+    background: var(--bg-app); color: var(--text); font-size: 13px;
+  }
+  body { display: grid; grid-template-columns: 280px 1fr 320px; grid-template-rows: 48px 1fr; }
+
+  /* Mobile-toggle buttons in topbar (hidden on desktop) */
+  .panel-toggle {
+    display: none;
+    background: var(--bg-input); border: 1px solid var(--border);
+    color: var(--text); padding: 6px 10px; border-radius: 5px; cursor: pointer;
+    font-size: 16px;
+  }
+
+  @media (max-width: 900px) {
+    body {
+      grid-template-columns: 1fr;
+      grid-template-rows: 48px 1fr;
+    }
+    .left-panel, .right-panel {
+      position: fixed; top: 48px; bottom: 0; width: 85%; max-width: 340px;
+      z-index: 100; transition: transform 0.25s ease;
+      box-shadow: 0 0 40px rgba(0,0,0,0.5);
+    }
+    .left-panel { left: 0; transform: translateX(-100%); }
+    .right-panel { right: 0; transform: translateX(100%); }
+    .left-panel.open { transform: translateX(0); }
+    .right-panel.open { transform: translateX(0); }
+    .panel-toggle { display: inline-block; }
+    .topbar .post-type, .topbar .league-pick label { display: none; }
+    .topbar button.action:not(.primary):not(.panel-toggle) {
+      display: none;
+    }
+    .topbar #btnExportProject, .topbar #btnImportProject { display: none; }
+    .canvas-area {
+      grid-column: 1 / -1;
+    }
+    /* Backdrop when a panel is open */
+    .panel-backdrop {
+      display: none; position: fixed; inset: 48px 0 0 0;
+      background: rgba(0,0,0,0.5); z-index: 99;
+    }
+    .panel-backdrop.show { display: block; }
+  }
+  .topbar {
+    grid-column: 1 / -1;
+    display: flex; align-items: center; padding: 0 16px;
+    background: var(--bg-panel); border-bottom: 1px solid var(--border);
+    gap: 16px;
+  }
+  .topbar .logo {
+    font-weight: 700; letter-spacing: -0.02em; font-size: 15px;
+    color: var(--accent);
+  }
+  .topbar .logo span { color: var(--text); }
+  .topbar .post-type {
+    display: flex; gap: 4px; background: var(--bg-input);
+    padding: 3px; border-radius: 6px;
+  }
+  .topbar .post-type button {
+    background: transparent; border: 0; color: var(--text-dim);
+    padding: 5px 12px; font-size: 12px; border-radius: 4px;
+    cursor: pointer; font-weight: 500;
+  }
+  .topbar .post-type button.active {
+    background: var(--accent); color: #fff;
+  }
+  .topbar .post-type button:disabled {
+    opacity: 0.4; cursor: not-allowed;
+  }
+  .topbar .spacer { flex: 1; }
+  .topbar .league-pick {
+    display: flex; gap: 6px; align-items: center;
+  }
+  .topbar .league-pick label { color: var(--text-dim); font-size: 11px; }
+  .topbar select, .topbar button.action {
+    background: var(--bg-input); border: 1px solid var(--border);
+    color: var(--text); padding: 6px 10px; border-radius: 5px; font-size: 12px;
+    cursor: pointer;
+  }
+  .topbar button.action:hover { background: var(--bg-panel-2); }
+  .topbar button.primary {
+    background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600;
+  }
+  .topbar button.primary:hover { filter: brightness(1.1); }
+
+  /* === LEFT PANEL: LAYERS === */
+  .left-panel {
+    background: var(--bg-panel); border-right: 1px solid var(--border);
+    overflow-y: auto; display: flex; flex-direction: column;
+  }
+  .panel-section { border-bottom: 1px solid var(--border); }
+  .panel-section h3 {
+    margin: 0; padding: 12px 14px 8px; font-size: 10px; font-weight: 700;
+    letter-spacing: 0.1em; text-transform: uppercase; color: var(--text-muted);
+    display: flex; justify-content: space-between; align-items: center;
+  }
+  .panel-section h3 button {
+    background: transparent; border: 0; color: var(--text-dim); cursor: pointer;
+    font-size: 14px; padding: 0 4px;
+  }
+  .panel-section h3 button:hover { color: var(--accent); }
+  .layer-list { padding: 0 8px 12px; }
+  .layer-item {
+    display: flex; align-items: center; gap: 8px;
+    padding: 7px 8px; border-radius: 5px; cursor: pointer;
+    margin-bottom: 2px; font-size: 12px;
+    border: 1px solid transparent;
+  }
+  .layer-item:hover { background: var(--bg-panel-2); }
+  .layer-item.selected {
+    background: var(--bg-panel-2); border-color: var(--accent);
+  }
+  .layer-item .vis {
+    width: 16px; text-align: center; opacity: 0.6; cursor: pointer; user-select: none;
+  }
+  .layer-item .vis:hover { opacity: 1; }
+  .layer-item.hidden { opacity: 0.4; }
+  .layer-item .name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .layer-item .grab { cursor: grab; color: var(--text-muted); font-size: 10px; }
+
+  /* === CENTER: CANVAS === */
+  .canvas-area {
+    background: var(--bg-app);
+    display: flex; align-items: center; justify-content: center;
+    overflow: hidden; position: relative;
+    background-image:
+      linear-gradient(45deg, #1a1d27 25%, transparent 25%),
+      linear-gradient(-45deg, #1a1d27 25%, transparent 25%),
+      linear-gradient(45deg, transparent 75%, #1a1d27 75%),
+      linear-gradient(-45deg, transparent 75%, #1a1d27 75%);
+    background-size: 20px 20px;
+    background-position: 0 0, 0 10px, 10px -10px, -10px 0px;
+  }
+  .canvas-wrap {
+    position: relative;
+    box-shadow: 0 30px 80px rgba(0,0,0,0.5);
+    background: #000;
+  }
+  canvas#mainCanvas {
+    display: block; cursor: default;
+  }
+  .canvas-overlay {
+    position: absolute; inset: 0; pointer-events: none;
+  }
+  .zoom-controls {
+    position: absolute; bottom: 14px; left: 14px;
+    display: flex; gap: 4px; background: var(--bg-panel); padding: 4px;
+    border-radius: 6px; border: 1px solid var(--border);
+  }
+  .zoom-controls button {
+    background: transparent; border: 0; color: var(--text); cursor: pointer;
+    padding: 4px 10px; border-radius: 3px; font-size: 11px;
+  }
+  .zoom-controls button:hover { background: var(--bg-panel-2); }
+  .zoom-controls .zoom-val { padding: 4px 8px; color: var(--text-dim); font-size: 11px; min-width: 50px; text-align: center; }
+
+  /* === RIGHT PANEL: PROPERTIES === */
+  .right-panel {
+    background: var(--bg-panel); border-left: 1px solid var(--border);
+    overflow-y: auto;
+  }
+  .prop-group { padding: 14px; border-bottom: 1px solid var(--border); }
+  .prop-group h4 {
+    margin: 0 0 12px; font-size: 11px; font-weight: 700; letter-spacing: 0.06em;
+    text-transform: uppercase; color: var(--text-dim);
+  }
+  .prop-row {
+    display: grid; grid-template-columns: 80px 1fr; gap: 10px;
+    align-items: center; margin-bottom: 8px;
+  }
+  .prop-row label { color: var(--text-dim); font-size: 11px; }
+  .prop-row input[type="text"],
+  .prop-row input[type="number"],
+  .prop-row select,
+  .prop-row textarea {
+    background: var(--bg-input); border: 1px solid var(--border);
+    color: var(--text); padding: 6px 8px; border-radius: 4px;
+    font-size: 12px; width: 100%; font-family: inherit;
+  }
+  .prop-row input[type="range"] { width: 100%; }
+  .prop-row input[type="color"] {
+    background: var(--bg-input); border: 1px solid var(--border);
+    height: 28px; width: 100%; border-radius: 4px; cursor: pointer; padding: 2px;
+  }
+  .prop-row .pair { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+  .empty-state {
+    padding: 60px 20px; text-align: center; color: var(--text-muted);
+    font-size: 12px; line-height: 1.5;
+  }
+  .empty-state .icon { font-size: 32px; opacity: 0.5; margin-bottom: 10px; }
+
+  /* file upload buttons */
+  .upload-btn {
+    display: block; width: 100%; padding: 8px; background: var(--bg-input);
+    border: 1px dashed var(--border-strong); color: var(--text-dim);
+    border-radius: 5px; text-align: center; cursor: pointer; font-size: 11px;
+    transition: all 0.15s;
+  }
+  .upload-btn:hover { border-color: var(--accent); color: var(--accent); }
+  .upload-btn input { display: none; }
+
+  /* league swatches */
+  .league-swatches {
+    display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px;
+    padding: 0 14px 14px;
+  }
+  .swatch {
+    aspect-ratio: 1.6; border-radius: 5px; cursor: pointer;
+    display: flex; align-items: flex-end; padding: 6px 8px;
+    font-size: 10px; font-weight: 700; color: #fff;
+    border: 2px solid transparent;
+    box-shadow: inset 0 0 30px rgba(0,0,0,0.2);
+    background-size: cover; background-position: center;
+  }
+  .swatch.active { border-color: var(--accent); }
+
+  /* helper buttons */
+  .row-buttons { display: flex; gap: 6px; }
+  .row-buttons button {
+    flex: 1; background: var(--bg-input); border: 1px solid var(--border);
+    color: var(--text); padding: 6px; border-radius: 4px; cursor: pointer;
+    font-size: 11px;
+  }
+  .row-buttons button:hover { background: var(--bg-panel-2); border-color: var(--accent); }
+
+  /* hide scrollbar styling */
+  ::-webkit-scrollbar { width: 8px; height: 8px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+  ::-webkit-scrollbar-thumb:hover { background: var(--border-strong); }
+
+  .badge {
+    display: inline-block; padding: 1px 6px; font-size: 9px;
+    background: var(--accent); color: #fff; border-radius: 3px;
+    text-transform: uppercase; letter-spacing: 0.06em; font-weight: 700;
+    margin-left: 6px; vertical-align: middle;
+  }
+  .toast {
+    position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%);
+    background: var(--bg-panel-2); border: 1px solid var(--border-strong);
+    padding: 10px 18px; border-radius: 6px; font-size: 12px;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.4); z-index: 1000;
+    opacity: 0; transition: opacity 0.2s, transform 0.2s;
+    pointer-events: none;
+  }
+  .toast.show { opacity: 1; transform: translateX(-50%) translateY(-4px); }
+
+  hr { border: 0; border-top: 1px solid var(--border); margin: 10px 0; }
+
+  .hint {
+    font-size: 10px; color: var(--text-muted); padding: 4px 0; line-height: 1.5;
+  }
+  kbd {
+    background: var(--bg-input); border: 1px solid var(--border);
+    padding: 1px 5px; border-radius: 3px; font-size: 10px; font-family: monospace;
+  }
+</style>
+</head>
+<body>
+
+<!-- TOP BAR -->
+<div class="topbar">
+  <button class="panel-toggle" id="toggleLeft" title="Menu">☰</button>
+  <div class="logo">o<span>Basketu</span> Editor</div>
+  <div class="post-type">
+    <button class="active" data-type="vysledek">Výsledek</button>
+    <button disabled title="Brzy">Hráč zápasu</button>
+    <button disabled title="Brzy">Quote</button>
+    <button disabled title="Brzy">Novinka</button>
+  </div>
+  <div class="spacer"></div>
+  <div class="league-pick">
+    <label>Liga:</label>
+    <select id="leagueSelect">
+      <option value="nbl">NBL</option>
+      <option value="zbl">ŽBL</option>
+      <option value="bcl">BCL</option>
+      <option value="repre">Repre</option>
+    </select>
+  </div>
+  <button class="action" id="btnImportProject">Načíst projekt</button>
+  <button class="action" id="btnExportProject">Uložit projekt</button>
+  <button class="action primary" id="btnExportPNG">Export PNG</button>
+  <button class="panel-toggle" id="toggleRight" title="Properties">⚙</button>
+</div>
+
+<!-- Mobile backdrop -->
+<div class="panel-backdrop" id="panelBackdrop"></div>
+
+<!-- LEFT PANEL: layers + assets -->
+<div class="left-panel">
+  <div class="panel-section">
+    <h3>Liga & Pozadí</h3>
+    <div class="league-swatches" id="leagueSwatches"></div>
+    <div style="padding: 0 14px 14px;">
+      <label class="upload-btn">
+        Nahrát pozadí pro aktivní ligu
+        <input type="file" id="uploadBg" accept="image/*">
+      </label>
+    </div>
+  </div>
+
+  <div class="panel-section">
+    <h3>Vrstvy <button title="Přesouvej pomocí šipek na klávesnici" id="layerHelp">?</button></h3>
+    <div class="layer-list" id="layerList"></div>
+  </div>
+
+  <div class="panel-section">
+    <h3>Assety</h3>
+    <div style="padding: 0 14px 14px; display: flex; flex-direction: column; gap: 6px;">
+      <label class="upload-btn">
+        Logo ligy / turnaje
+        <input type="file" id="uploadLeagueLogo" accept="image/*">
+      </label>
+      <label class="upload-btn">
+        Logo týmu A (vlevo)
+        <input type="file" id="uploadTeamA" accept="image/*">
+      </label>
+      <label class="upload-btn">
+        Logo týmu B (vpravo)
+        <input type="file" id="uploadTeamB" accept="image/*">
+      </label>
+      <label class="upload-btn">
+        Hlavní fotka
+        <input type="file" id="uploadMainPhoto" accept="image/*">
+      </label>
+      <label class="upload-btn">
+        Logo oBasketu (footer)
+        <input type="file" id="uploadFooterLogo" accept="image/*">
+      </label>
+    </div>
+  </div>
+
+  <div class="panel-section">
+    <h3>Fonty</h3>
+    <div style="padding: 0 14px 14px;">
+      <label class="upload-btn">
+        Nahrát font (.ttf / .otf / .woff2)
+        <input type="file" id="uploadFont" accept=".ttf,.otf,.woff,.woff2">
+      </label>
+      <div id="fontList" style="margin-top: 8px; font-size: 11px; color: var(--text-dim);"></div>
+    </div>
+  </div>
+</div>
+
+<!-- CANVAS -->
+<div class="canvas-area" id="canvasArea">
+  <div class="canvas-wrap" id="canvasWrap">
+    <canvas id="mainCanvas" width="1080" height="1350"></canvas>
+  </div>
+  <div class="zoom-controls">
+    <button id="zoomOut">−</button>
+    <div class="zoom-val" id="zoomVal">50%</div>
+    <button id="zoomIn">+</button>
+    <button id="zoomFit">Fit</button>
+    <button id="zoom100">100%</button>
+  </div>
+</div>
+
+<!-- RIGHT PANEL: properties -->
+<div class="right-panel" id="rightPanel">
+  <div class="empty-state">
+    <div class="icon">⬚</div>
+    Vyber vrstvu pro úpravu vlastností.<br><br>
+    <div style="text-align: left; font-size: 11px; line-height: 1.7;">
+      <strong style="color: var(--text);">Klávesy:</strong><br>
+      <kbd>↑↓←→</kbd> posun o 1 px<br>
+      <kbd>Shift</kbd> + šipky → 10 px<br>
+      <kbd>Del</kbd> smaž vrstvu<br>
+      <kbd>Ctrl+D</kbd> duplikuj<br>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+/* =========================================================================
+   oBasketu Editor — vanilla JS, single file, no dependencies
+   ========================================================================= */
+
+const W = 1080, H = 1350;
+const canvas = document.getElementById('mainCanvas');
+const ctx = canvas.getContext('2d');
+
+// === STATE ===
+const state = {
+  league: 'nbl',
+  zoom: 0.5,
+  selectedId: null,
+  layers: [],
+  // league theme config — Petr can extend later
+  leagues: {
+    // color1 = top/main hue (purple for NBL), color2 = accent glow (orange for NBL)
+    // these match Petr's existing oBasketu backgrounds (NBL purple → orange diagonal)
+    nbl:   { name: 'NBL',   color1: '#3a0d8a', color2: '#ff4d1a', bgDataUrl: null },
+    zbl:   { name: 'ŽBL',   color1: '#0d4d2a', color2: '#ff8c1a', bgDataUrl: null },
+    bcl:   { name: 'BCL',   color1: '#0a1a40', color2: '#0a4dcc', bgDataUrl: null },
+    repre: { name: 'Repre', color1: '#4a0a0a', color2: '#d4af37', bgDataUrl: null },
+  },
+  // shared asset slots (logos, photo)
+  assets: {
+    leagueLogo: null,
+    teamA: null,
+    teamB: null,
+    mainPhoto: null,
+    footerLogo: null,
+  },
+  fonts: [], // {family, dataUrl}
+};
+
+// === LAYER FACTORY ===
+let nextId = 1;
+function uid() { return 'L' + (nextId++); }
+
+function createDefaultLayers() {
+  // Build a layer stack that mirrors the example graphics (Image 1 / Image 2 / Image 3)
+  // Stacked back-to-front: background, gradient, photo, photo-fade, top bar (Maxa NBL Play-off + SEMIFINÁLE),
+  // score block, team logos, divider, star + player line, footer logo, foto credit
+  state.layers = [
+    {
+      id: uid(), type: 'background', name: 'Pozadí (liga)', visible: true, locked: false,
+      // uses league bgDataUrl if available; else fallback gradient
+    },
+    {
+      id: uid(), type: 'photo', name: 'Hlavní fotka', visible: true, locked: false,
+      x: 0, y: 0, scale: 1, opacity: 1, assetKey: 'mainPhoto',
+    },
+    {
+      id: uid(), type: 'fade', name: 'Spodní fade (liga)', visible: true, locked: false,
+      from: 0.45, to: 1.0, useLeagueColors: true, color: '#3a0d8a', accentColor: '#ff4d1a',
+      glowIntensity: 0.65, opacity: 0.95,
+    },
+    {
+      id: uid(), type: 'image', name: 'Logo ligy/turnaj', visible: true, locked: false,
+      x: 540, y: 100, width: 220, anchor: 'center', assetKey: 'leagueLogo', opacity: 1,
+    },
+    {
+      id: uid(), type: 'text', name: 'Podtitul (SEMIFINÁLE • ZÁPAS X)', visible: true, locked: false,
+      x: 540, y: 200, text: 'SEMIFINÁLE  •  ZÁPAS 2', anchor: 'center',
+      fontFamily: 'system-ui', fontSize: 36, fontWeight: '500', color: '#ffffff',
+      letterSpacing: 0.08, opacity: 0.95,
+    },
+    {
+      id: uid(), type: 'text', name: 'Foto credit (top-right)', visible: true, locked: false,
+      x: 1040, y: 80, text: 'Foto: Basket Brno', anchor: 'right',
+      fontFamily: 'system-ui', fontSize: 28, fontWeight: '500', color: '#ffffff',
+      italic: true, opacity: 0.95,
+    },
+    {
+      id: uid(), type: 'image', name: 'Logo týmu A', visible: true, locked: false,
+      x: 230, y: 1090, width: 180, anchor: 'center', assetKey: 'teamA', opacity: 1,
+    },
+    {
+      id: uid(), type: 'image', name: 'Logo týmu B', visible: true, locked: false,
+      x: 850, y: 1090, width: 180, anchor: 'center', assetKey: 'teamB', opacity: 1,
+    },
+    {
+      id: uid(), type: 'text', name: 'Skóre', visible: true, locked: false,
+      x: 540, y: 1090, text: '89 : 92', anchor: 'center',
+      fontFamily: 'system-ui', fontSize: 130, fontWeight: '700', color: '#ffffff',
+      letterSpacing: 0,
+    },
+    {
+      id: uid(), type: 'text', name: 'Stav série', visible: true, locked: false,
+      x: 540, y: 1180, text: 'STAV SÉRIE: 0-2', anchor: 'center',
+      fontFamily: 'system-ui', fontSize: 32, fontWeight: '600', color: '#ffffff',
+      letterSpacing: 0.05,
+    },
+    {
+      id: uid(), type: 'divider', name: 'Oddělovač (linka)', visible: true, locked: false,
+      x: 90, y: 1220, width: 900, height: 1, color: '#ffffff', opacity: 0.4,
+    },
+    {
+      id: uid(), type: 'text', name: 'Hráč zápasu (★ + text)', visible: true, locked: false,
+      x: 540, y: 1265, text: '★  Tevin Olison (21 PTS, 2 REB, 4 AST)', anchor: 'center',
+      fontFamily: 'system-ui', fontSize: 30, fontWeight: '500', color: '#ffffff',
+      italic: true,
+    },
+    {
+      id: uid(), type: 'image', name: 'Logo oBasketu (footer)', visible: true, locked: false,
+      x: 540, y: 1310, width: 60, anchor: 'center', assetKey: 'footerLogo', opacity: 1,
+    },
+  ];
+}
+
+createDefaultLayers();
+
+// === RENDER ===
+function render() {
+  ctx.clearRect(0, 0, W, H);
+  for (const layer of state.layers) {
+    if (!layer.visible) continue;
+    ctx.save();
+    ctx.globalAlpha = layer.opacity ?? 1;
+    drawLayer(layer);
+    ctx.restore();
+  }
+  drawSelectionHandles();
+}
+
+function drawLayer(layer) {
+  switch (layer.type) {
+    case 'background': drawBackground(layer); break;
+    case 'photo':       drawPhoto(layer); break;
+    case 'fade':        drawFade(layer); break;
+    case 'image':       drawImageLayer(layer); break;
+    case 'text':        drawText(layer); break;
+    case 'divider':     drawDivider(layer); break;
+  }
+}
+
+function drawBackground(layer) {
+  const lg = state.leagues[state.league];
+  if (lg.bgDataUrl) {
+    const img = getCachedImage(lg.bgDataUrl);
+    if (img && img.complete) {
+      ctx.drawImage(img, 0, 0, W, H);
+      return;
+    }
+  }
+  // fallback gradient
+  const grad = ctx.createLinearGradient(0, 0, W, H);
+  grad.addColorStop(0, lg.color1);
+  grad.addColorStop(1, lg.color2);
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, W, H);
+}
+
+function drawPhoto(layer) {
+  if (!layer.assetKey) return;
+  const url = state.assets[layer.assetKey];
+  if (!url) return;
+  const img = getCachedImage(url);
+  if (!img || !img.complete) return;
+  // photo fills width by default, with scale + offset
+  const baseScale = W / img.naturalWidth;
+  const s = baseScale * (layer.scale || 1);
+  const dw = img.naturalWidth * s;
+  const dh = img.naturalHeight * s;
+  const dx = (W - dw) / 2 + (layer.x || 0);
+  const dy = (layer.y || 0);
+  ctx.drawImage(img, dx, dy, dw, dh);
+}
+
+function drawFade(layer) {
+  // The fade samples the actual league background image and applies it over the photo
+  // with a vertical alpha mask. This way the fade carries the real texture and color
+  // of Petr's uploaded background (e.g. NBL purple→orange diagonal with grain texture).
+  const lg = state.leagues[state.league];
+  const bgImg = lg.bgDataUrl ? getCachedImage(lg.bgDataUrl) : null;
+
+  const fromY = H * layer.from;
+  const toY = H * layer.to;
+  const fadeH = toY - fromY + 1;
+
+  if (bgImg && bgImg.complete) {
+    // Use an offscreen canvas to build the masked background slice
+    const off = document.createElement('canvas');
+    off.width = W;
+    off.height = fadeH;
+    const offCtx = off.getContext('2d');
+
+    // 1) Draw the corresponding slice of the background onto the offscreen canvas.
+    //    The background is drawn at full size (W x H) but we only need the slice
+    //    that corresponds to the fade area, so it matches the underlying background pixels.
+    offCtx.drawImage(bgImg, 0, -fromY, W, H);
+
+    // 2) Apply a vertical alpha gradient mask: transparent at top → opaque at bottom
+    offCtx.globalCompositeOperation = 'destination-in';
+    const mask = offCtx.createLinearGradient(0, 0, 0, fadeH);
+    mask.addColorStop(0, 'rgba(0,0,0,0)');
+    mask.addColorStop(0.6, 'rgba(0,0,0,0.85)');
+    mask.addColorStop(1, 'rgba(0,0,0,1)');
+    offCtx.fillStyle = mask;
+    offCtx.fillRect(0, 0, W, fadeH);
+
+    // 3) Composite the masked slice onto the main canvas at its correct position
+    ctx.drawImage(off, 0, fromY);
+  } else {
+    // Fallback: no background uploaded yet — use league solid colors as before
+    const baseColor = layer.useLeagueColors !== false ? lg.color1 : layer.color;
+    const grad = ctx.createLinearGradient(0, fromY, 0, toY);
+    grad.addColorStop(0, hexToRGBA(baseColor, 0));
+    grad.addColorStop(0.6, hexToRGBA(baseColor, 0.85));
+    grad.addColorStop(1, hexToRGBA(baseColor, 1));
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, fromY, W, fadeH);
+  }
+}
+
+function drawImageLayer(layer) {
+  if (!layer.assetKey) return;
+  const url = state.assets[layer.assetKey];
+  if (!url) return;
+  const img = getCachedImage(url);
+  if (!img || !img.complete) return;
+  const aspect = img.naturalHeight / img.naturalWidth;
+  const w = layer.width || 120;
+  const h = w * aspect;
+  let x = layer.x, y = layer.y;
+  if (layer.anchor === 'center') { x -= w/2; y -= h/2; }
+  if (layer.anchor === 'right')  { x -= w;   y -= h/2; }
+
+  // === OUTER GLOW (Affinity Layer Effects style) ===
+  if (layer.glow && layer.glow.enabled) {
+    const g = layer.glow;
+    const radius = g.radius ?? 20;
+    const intensity = g.intensity ?? 0.6;
+    const color = g.color || '#ffffff';
+    // Use canvas shadow API. For "Screen" blend feel, draw the shadow multiple times
+    // for stronger intensity. Each pass uses shadowBlur + transparent image to project the glow.
+    ctx.save();
+    const passes = Math.max(1, Math.round(intensity * 4));
+    ctx.shadowColor = color;
+    ctx.shadowBlur = radius;
+    // First draw the shadow without the source pixels overwriting:
+    // trick: draw image off-canvas position with shadow offset, OR draw repeatedly.
+    for (let i = 0; i < passes; i++) {
+      ctx.drawImage(img, x, y, w, h);
+    }
+    ctx.restore();
+  }
+
+  // === ACTUAL IMAGE (no shadow) ===
+  ctx.drawImage(img, x, y, w, h);
+}
+
+function drawText(layer) {
+  const fStyle = layer.italic ? 'italic ' : '';
+  ctx.font = `${fStyle}${layer.fontWeight || '500'} ${layer.fontSize}px ${layer.fontFamily || 'system-ui'}`;
+  ctx.fillStyle = layer.color;
+  ctx.textBaseline = 'middle';
+  if (layer.anchor === 'right') ctx.textAlign = 'right';
+  else if (layer.anchor === 'left') ctx.textAlign = 'left';
+  else ctx.textAlign = 'center';
+
+  // letter spacing emulation
+  if (layer.letterSpacing && layer.letterSpacing > 0) {
+    drawSpacedText(layer.text, layer.x, layer.y, layer.letterSpacing * layer.fontSize, ctx.textAlign);
+  } else {
+    ctx.fillText(layer.text, layer.x, layer.y);
+  }
+}
+
+function drawSpacedText(text, x, y, spacing, align) {
+  // compute total width
+  let total = 0;
+  for (let i = 0; i < text.length; i++) {
+    total += ctx.measureText(text[i]).width;
+    if (i < text.length - 1) total += spacing;
+  }
+  let cursor = x;
+  if (align === 'center') cursor = x - total / 2;
+  else if (align === 'right') cursor = x - total;
+  const prevAlign = ctx.textAlign;
+  ctx.textAlign = 'left';
+  for (let i = 0; i < text.length; i++) {
+    ctx.fillText(text[i], cursor, y);
+    cursor += ctx.measureText(text[i]).width + spacing;
+  }
+  ctx.textAlign = prevAlign;
+}
+
+function drawDivider(layer) {
+  ctx.fillStyle = layer.color;
+  ctx.fillRect(layer.x, layer.y, layer.width, layer.height);
+}
+
+function hexToRGBA(hex, a) {
+  const c = hex.replace('#','');
+  const r = parseInt(c.substring(0,2),16);
+  const g = parseInt(c.substring(2,4),16);
+  const b = parseInt(c.substring(4,6),16);
+  return `rgba(${r},${g},${b},${a})`;
+}
+
+// === IMAGE CACHE ===
+const imageCache = new Map();
+function getCachedImage(dataUrl) {
+  if (!dataUrl) return null;
+  if (imageCache.has(dataUrl)) return imageCache.get(dataUrl);
+  const img = new Image();
+  img.onload = () => render();
+  img.src = dataUrl;
+  imageCache.set(dataUrl, img);
+  return img;
+}
+
+// === SELECTION + DRAG ===
+let dragging = null; // {layerId, startX, startY, origX, origY}
+
+function drawSelectionHandles() {
+  if (!state.selectedId) return;
+  const layer = state.layers.find(l => l.id === state.selectedId);
+  if (!layer) return;
+  const bounds = getLayerBounds(layer);
+  if (!bounds) return;
+  ctx.save();
+  ctx.strokeStyle = '#ff6b1a';
+  ctx.lineWidth = 3;
+  ctx.setLineDash([10, 6]);
+  ctx.strokeRect(bounds.x, bounds.y, bounds.w, bounds.h);
+  ctx.restore();
+}
+
+function getLayerBounds(layer) {
+  if (layer.type === 'text') {
+    ctx.font = `${layer.italic ? 'italic ' : ''}${layer.fontWeight || '500'} ${layer.fontSize}px ${layer.fontFamily || 'system-ui'}`;
+    const m = ctx.measureText(layer.text);
+    const w = m.width + (layer.letterSpacing ? layer.letterSpacing * layer.fontSize * (layer.text.length-1) : 0);
+    const h = layer.fontSize * 1.2;
+    let x = layer.x, y = layer.y - h/2;
+    if (layer.anchor === 'center') x -= w/2;
+    else if (layer.anchor === 'right') x -= w;
+    return { x, y, w, h };
+  }
+  if (layer.type === 'image') {
+    const url = state.assets[layer.assetKey];
+    const img = getCachedImage(url);
+    if (!img || !img.complete) return null;
+    const aspect = img.naturalHeight / img.naturalWidth;
+    const w = layer.width;
+    const h = w * aspect;
+    let x = layer.x, y = layer.y;
+    if (layer.anchor === 'center') { x -= w/2; y -= h/2; }
+    if (layer.anchor === 'right')  { x -= w;   y -= h/2; }
+    return { x, y, w, h };
+  }
+  if (layer.type === 'divider') {
+    return { x: layer.x, y: layer.y - 8, w: layer.width, h: Math.max(16, layer.height + 16) };
+  }
+  if (layer.type === 'photo') {
+    const url = state.assets[layer.assetKey];
+    const img = getCachedImage(url);
+    if (!img || !img.complete) return { x: 0, y: 0, w: W, h: H };
+    const baseScale = W / img.naturalWidth;
+    const s = baseScale * (layer.scale || 1);
+    return { x: (W - img.naturalWidth*s)/2 + (layer.x||0), y: (layer.y||0), w: img.naturalWidth*s, h: img.naturalHeight*s };
+  }
+  return null;
+}
+
+// === MOUSE EVENTS ON CANVAS ===
+function canvasCoordsFromMouse(ev) {
+  const rect = canvas.getBoundingClientRect();
+  const x = (ev.clientX - rect.left) * (W / rect.width);
+  const y = (ev.clientY - rect.top) * (H / rect.height);
+  return { x, y };
+}
+
+canvas.addEventListener('mousedown', (ev) => {
+  const { x, y } = canvasCoordsFromMouse(ev);
+  // hit-test from topmost layer down
+  for (let i = state.layers.length - 1; i >= 0; i--) {
+    const layer = state.layers[i];
+    if (!layer.visible || layer.locked) continue;
+    if (layer.type === 'background' || layer.type === 'fade') continue;
+    const b = getLayerBounds(layer);
+    if (b && x >= b.x && x <= b.x + b.w && y >= b.y && y <= b.y + b.h) {
+      selectLayer(layer.id);
+      dragging = { layerId: layer.id, startX: x, startY: y, origX: layer.x, origY: layer.y };
+      return;
+    }
+  }
+  selectLayer(null);
+});
+
+canvas.addEventListener('mousemove', (ev) => {
+  if (!dragging) {
+    // hover cursor
+    const { x, y } = canvasCoordsFromMouse(ev);
+    let onObj = false;
+    for (let i = state.layers.length - 1; i >= 0; i--) {
+      const layer = state.layers[i];
+      if (!layer.visible || layer.locked) continue;
+      if (layer.type === 'background' || layer.type === 'fade') continue;
+      const b = getLayerBounds(layer);
+      if (b && x >= b.x && x <= b.x + b.w && y >= b.y && y <= b.y + b.h) { onObj = true; break; }
+    }
+    canvas.style.cursor = onObj ? 'move' : 'default';
+    return;
+  }
+  const { x, y } = canvasCoordsFromMouse(ev);
+  const dx = x - dragging.startX;
+  const dy = y - dragging.startY;
+  const layer = state.layers.find(l => l.id === dragging.layerId);
+  if (layer) {
+    layer.x = dragging.origX + dx;
+    layer.y = dragging.origY + dy;
+    render();
+    if (state.selectedId === layer.id) renderRightPanel();
+  }
+});
+
+window.addEventListener('mouseup', () => { dragging = null; });
+
+// === KEYBOARD NUDGE ===
+window.addEventListener('keydown', (ev) => {
+  if (!state.selectedId) return;
+  // ignore if focus is in an input
+  const t = ev.target;
+  if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT')) return;
+  const layer = state.layers.find(l => l.id === state.selectedId);
+  if (!layer) return;
+  const step = ev.shiftKey ? 10 : 1;
+  let handled = true;
+  if (ev.key === 'ArrowUp') layer.y -= step;
+  else if (ev.key === 'ArrowDown') layer.y += step;
+  else if (ev.key === 'ArrowLeft') layer.x -= step;
+  else if (ev.key === 'ArrowRight') layer.x += step;
+  else if (ev.key === 'Delete' || ev.key === 'Backspace') {
+    if (layer.type !== 'background') {
+      state.layers = state.layers.filter(l => l.id !== layer.id);
+      state.selectedId = null;
+      renderLayerList();
+      renderRightPanel();
+    }
+  } else if ((ev.ctrlKey || ev.metaKey) && ev.key === 'd') {
+    const dup = JSON.parse(JSON.stringify(layer));
+    dup.id = uid();
+    dup.name = layer.name + ' (kopie)';
+    if (typeof dup.x === 'number') dup.x += 20;
+    if (typeof dup.y === 'number') dup.y += 20;
+    const idx = state.layers.findIndex(l => l.id === layer.id);
+    state.layers.splice(idx+1, 0, dup);
+    state.selectedId = dup.id;
+    renderLayerList();
+    renderRightPanel();
+  } else handled = false;
+  if (handled) {
+    ev.preventDefault();
+    render();
+    renderRightPanel();
+  }
+});
+
+// === LAYER LIST UI ===
+function renderLayerList() {
+  const list = document.getElementById('layerList');
+  list.innerHTML = '';
+  // top of array = bottom of stack; reverse for display
+  const reversed = [...state.layers].reverse();
+  reversed.forEach(layer => {
+    const item = document.createElement('div');
+    item.className = 'layer-item';
+    if (state.selectedId === layer.id) item.classList.add('selected');
+    if (!layer.visible) item.classList.add('hidden');
+    item.innerHTML = `
+      <span class="vis" data-id="${layer.id}">${layer.visible ? '◉' : '○'}</span>
+      <span class="name">${escapeHtml(layer.name)}</span>
+      <span class="grab">⋮⋮</span>
+    `;
+    item.addEventListener('click', (ev) => {
+      if (ev.target.classList.contains('vis')) {
+        layer.visible = !layer.visible;
+        renderLayerList();
+        render();
+        return;
+      }
+      selectLayer(layer.id);
+    });
+    list.appendChild(item);
+  });
+}
+
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
+}
+
+function selectLayer(id) {
+  state.selectedId = id;
+  renderLayerList();
+  renderRightPanel();
+  render();
+}
+
+// === RIGHT PANEL — DYNAMIC PROPERTY EDITOR ===
+function renderRightPanel() {
+  const panel = document.getElementById('rightPanel');
+  if (!state.selectedId) {
+    panel.innerHTML = `
+      <div class="empty-state">
+        <div class="icon">⬚</div>
+        Vyber vrstvu pro úpravu.<br><br>
+        <div style="text-align: left; font-size: 11px; line-height: 1.7; color: var(--text-dim);">
+          <strong style="color: var(--text);">Klávesy:</strong><br>
+          <kbd>↑↓←→</kbd> posun o 1 px<br>
+          <kbd>Shift</kbd>+šipky → 10 px<br>
+          <kbd>Del</kbd> smaž vrstvu<br>
+          <kbd>Ctrl+D</kbd> duplikuj<br>
+        </div>
+      </div>`;
+    return;
+  }
+  const layer = state.layers.find(l => l.id === state.selectedId);
+  if (!layer) return;
+
+  let html = `
+    <div class="prop-group">
+      <h4>${escapeHtml(layer.name)} <span class="badge">${layer.type}</span></h4>
+      <div class="prop-row"><label>Název</label><input type="text" data-prop="name" value="${escapeHtml(layer.name)}"></div>
+  `;
+
+  if (layer.type !== 'background' && layer.type !== 'fade') {
+    html += `
+      <div class="prop-row"><label>Pozice X</label><input type="number" data-prop="x" value="${Math.round(layer.x)}"></div>
+      <div class="prop-row"><label>Pozice Y</label><input type="number" data-prop="y" value="${Math.round(layer.y)}"></div>
+    `;
+  }
+
+  if (layer.type === 'text') {
+    html += `
+      <div class="prop-row"><label>Text</label><textarea data-prop="text" rows="2">${escapeHtml(layer.text)}</textarea></div>
+      <div class="prop-row"><label>Font</label>${renderFontSelect(layer.fontFamily)}</div>
+      <div class="prop-row"><label>Velikost</label><input type="number" data-prop="fontSize" value="${layer.fontSize}"></div>
+      <div class="prop-row"><label>Tloušťka</label>
+        <select data-prop="fontWeight">
+          ${[300,400,500,600,700,800,900].map(w => `<option value="${w}" ${layer.fontWeight==w?'selected':''}>${w}</option>`).join('')}
+        </select>
+      </div>
+      <div class="prop-row"><label>Barva</label><input type="color" data-prop="color" value="${layer.color}"></div>
+      <div class="prop-row"><label>Kurzíva</label><input type="checkbox" data-prop="italic" ${layer.italic?'checked':''}></div>
+      <div class="prop-row"><label>Spacing</label><input type="number" step="0.01" data-prop="letterSpacing" value="${layer.letterSpacing||0}"></div>
+      <div class="prop-row"><label>Zarovnání</label>
+        <select data-prop="anchor">
+          <option value="left" ${layer.anchor=='left'?'selected':''}>Vlevo</option>
+          <option value="center" ${layer.anchor=='center'?'selected':''}>Střed</option>
+          <option value="right" ${layer.anchor=='right'?'selected':''}>Vpravo</option>
+        </select>
+      </div>
+    `;
+  }
+
+  if (layer.type === 'image') {
+    const glow = layer.glow || { enabled: false, radius: 20, intensity: 0.6, color: '#ffffff' };
+    html += `
+      <div class="prop-row"><label>Šířka</label><input type="number" data-prop="width" value="${layer.width}"></div>
+      <div class="prop-row"><label>Zarovnání</label>
+        <select data-prop="anchor">
+          <option value="left" ${layer.anchor=='left'?'selected':''}>Vlevo</option>
+          <option value="center" ${layer.anchor=='center'?'selected':''}>Střed</option>
+          <option value="right" ${layer.anchor=='right'?'selected':''}>Vpravo</option>
+        </select>
+      </div>
+      <div class="prop-row"><label>Asset slot</label>
+        <select data-prop="assetKey">
+          <option value="leagueLogo" ${layer.assetKey=='leagueLogo'?'selected':''}>Logo ligy</option>
+          <option value="teamA" ${layer.assetKey=='teamA'?'selected':''}>Logo tým A</option>
+          <option value="teamB" ${layer.assetKey=='teamB'?'selected':''}>Logo tým B</option>
+          <option value="footerLogo" ${layer.assetKey=='footerLogo'?'selected':''}>Logo footer</option>
+        </select>
+      </div>
+    </div>
+    <div class="prop-group">
+      <h4>Outer Glow</h4>
+      <div class="prop-row"><label>Zapnuto</label><input type="checkbox" data-glow="enabled" ${glow.enabled?'checked':''}></div>
+      <div class="prop-row"><label>Barva</label><input type="color" data-glow="color" value="${glow.color}"></div>
+      <div class="prop-row"><label>Radius</label><input type="range" min="1" max="80" step="1" data-glow="radius" value="${glow.radius}"></div>
+      <div class="prop-row"><label>Intenzita</label><input type="range" min="0.1" max="1" step="0.05" data-glow="intensity" value="${glow.intensity}"></div>
+    `;
+  }
+
+  if (layer.type === 'photo') {
+    html += `
+      <div class="prop-row"><label>Měřítko</label><input type="number" step="0.05" data-prop="scale" value="${layer.scale}"></div>
+    `;
+  }
+
+  if (layer.type === 'divider') {
+    html += `
+      <div class="prop-row"><label>Šířka</label><input type="number" data-prop="width" value="${layer.width}"></div>
+      <div class="prop-row"><label>Tloušťka</label><input type="number" data-prop="height" value="${layer.height}"></div>
+      <div class="prop-row"><label>Barva</label><input type="color" data-prop="color" value="${layer.color}"></div>
+    `;
+  }
+
+  if (layer.type === 'fade') {
+    html += `
+      <div class="prop-row"><label>Od (%)</label><input type="range" min="0" max="1" step="0.01" data-prop="from" value="${layer.from}"></div>
+      <div class="prop-row"><label>Do (%)</label><input type="range" min="0" max="1" step="0.01" data-prop="to" value="${layer.to}"></div>
+      <div class="hint">Fade vezme texturu z nahraného pozadí ligy a aplikuje ji jako přechod přes fotku. Pokud pozadí ligy není nahrané, použije se náhradní barva.</div>
+    `;
+  }
+
+  // common
+  html += `
+    <div class="prop-row"><label>Průhlednost</label><input type="range" min="0" max="1" step="0.05" data-prop="opacity" value="${layer.opacity ?? 1}"></div>
+    <hr>
+    <div class="row-buttons">
+      <button id="btnLayerUp">▲ Nahoru</button>
+      <button id="btnLayerDown">▼ Dolů</button>
+    </div>
+    <div class="row-buttons" style="margin-top:6px;">
+      <button id="btnDuplicate">Duplikovat</button>
+      <button id="btnDelete" style="color: var(--danger);">Smazat</button>
+    </div>
+    </div>
+  `;
+
+  panel.innerHTML = html;
+
+  // wire up inputs
+  panel.querySelectorAll('[data-prop]').forEach(el => {
+    el.addEventListener('input', () => {
+      const prop = el.dataset.prop;
+      let val;
+      if (el.type === 'checkbox') val = el.checked;
+      else if (el.type === 'number' || el.type === 'range') val = parseFloat(el.value);
+      else val = el.value;
+      layer[prop] = val;
+      if (prop === 'name') renderLayerList();
+      render();
+    });
+  });
+
+  // wire up outer glow inputs
+  panel.querySelectorAll('[data-glow]').forEach(el => {
+    el.addEventListener('input', () => {
+      if (!layer.glow) layer.glow = { enabled: false, radius: 20, intensity: 0.6, color: '#ffffff' };
+      const prop = el.dataset.glow;
+      let val;
+      if (el.type === 'checkbox') val = el.checked;
+      else if (el.type === 'number' || el.type === 'range') val = parseFloat(el.value);
+      else val = el.value;
+      layer.glow[prop] = val;
+      render();
+    });
+  });
+
+  // buttons
+  document.getElementById('btnLayerUp')?.addEventListener('click', () => moveLayer(layer.id, +1));
+  document.getElementById('btnLayerDown')?.addEventListener('click', () => moveLayer(layer.id, -1));
+  document.getElementById('btnDelete')?.addEventListener('click', () => {
+    if (layer.type === 'background') { toast('Pozadí nelze smazat'); return; }
+    state.layers = state.layers.filter(l => l.id !== layer.id);
+    state.selectedId = null;
+    renderLayerList(); renderRightPanel(); render();
+  });
+  document.getElementById('btnDuplicate')?.addEventListener('click', () => {
+    const dup = JSON.parse(JSON.stringify(layer));
+    dup.id = uid(); dup.name = layer.name + ' (kopie)';
+    if (typeof dup.x === 'number') dup.x += 20;
+    if (typeof dup.y === 'number') dup.y += 20;
+    const idx = state.layers.findIndex(l => l.id === layer.id);
+    state.layers.splice(idx+1, 0, dup);
+    state.selectedId = dup.id;
+    renderLayerList(); renderRightPanel(); render();
+  });
+}
+
+function renderFontSelect(current) {
+  const builtIn = ['system-ui', 'Georgia', 'Helvetica', 'Arial', 'Times New Roman', 'Courier New', 'Impact'];
+  const all = [...builtIn, ...state.fonts.map(f => f.family)];
+  return `<select data-prop="fontFamily">${all.map(f => `<option value="${escapeHtml(f)}" ${f===current?'selected':''}>${escapeHtml(f)}</option>`).join('')}</select>`;
+}
+
+function moveLayer(id, dir) {
+  const idx = state.layers.findIndex(l => l.id === id);
+  if (idx < 0) return;
+  const newIdx = idx + dir;
+  if (newIdx < 0 || newIdx >= state.layers.length) return;
+  const tmp = state.layers[idx];
+  state.layers[idx] = state.layers[newIdx];
+  state.layers[newIdx] = tmp;
+  renderLayerList(); render();
+}
+
+// === LEAGUE SWATCHES ===
+function renderLeagueSwatches() {
+  const container = document.getElementById('leagueSwatches');
+  container.innerHTML = '';
+  Object.entries(state.leagues).forEach(([key, lg]) => {
+    const sw = document.createElement('div');
+    sw.className = 'swatch' + (state.league === key ? ' active' : '');
+    if (lg.bgDataUrl) sw.style.backgroundImage = `url(${lg.bgDataUrl})`;
+    else sw.style.background = `linear-gradient(135deg, ${lg.color1}, ${lg.color2})`;
+    sw.innerHTML = lg.name;
+    sw.addEventListener('click', () => {
+      state.league = key;
+      document.getElementById('leagueSelect').value = key;
+      renderLeagueSwatches();
+      render();
+    });
+    container.appendChild(sw);
+  });
+}
+
+document.getElementById('leagueSelect').addEventListener('change', (e) => {
+  state.league = e.target.value;
+  renderLeagueSwatches();
+  render();
+});
+
+// === FILE UPLOADS ===
+function readFileAsDataURL(file) {
+  return new Promise((res, rej) => {
+    const r = new FileReader();
+    r.onload = () => res(r.result);
+    r.onerror = rej;
+    r.readAsDataURL(file);
+  });
+}
+
+document.getElementById('uploadBg').addEventListener('change', async (e) => {
+  const file = e.target.files[0]; if (!file) return;
+  state.leagues[state.league].bgDataUrl = await readFileAsDataURL(file);
+  renderLeagueSwatches(); render(); toast(`Pozadí nastaveno pro ${state.leagues[state.league].name}`);
+});
+
+['leagueLogo','teamA','teamB','mainPhoto','footerLogo'].forEach(slot => {
+  const id = 'upload' + slot[0].toUpperCase() + slot.slice(1);
+  // map our slot names → input ids
+  const mapping = {
+    leagueLogo: 'uploadLeagueLogo',
+    teamA: 'uploadTeamA',
+    teamB: 'uploadTeamB',
+    mainPhoto: 'uploadMainPhoto',
+    footerLogo: 'uploadFooterLogo',
+  };
+  const elId = mapping[slot];
+  const el = document.getElementById(elId);
+  if (!el) return;
+  el.addEventListener('change', async (e) => {
+    const file = e.target.files[0]; if (!file) return;
+    state.assets[slot] = await readFileAsDataURL(file);
+    render(); toast(`Asset "${slot}" nahrán`);
+  });
+});
+
+// === FONT UPLOAD ===
+document.getElementById('uploadFont').addEventListener('change', async (e) => {
+  const file = e.target.files[0]; if (!file) return;
+  const dataUrl = await readFileAsDataURL(file);
+  const family = file.name.replace(/\.[^.]+$/, '');
+  const fontFace = new FontFace(family, `url(${dataUrl})`);
+  try {
+    await fontFace.load();
+    document.fonts.add(fontFace);
+    state.fonts.push({ family, dataUrl });
+    renderFontList();
+    if (state.selectedId) renderRightPanel();
+    render();
+    toast(`Font "${family}" načten`);
+  } catch (err) {
+    toast('Font se nepodařilo načíst', true);
+  }
+});
+
+function renderFontList() {
+  const el = document.getElementById('fontList');
+  if (state.fonts.length === 0) {
+    el.innerHTML = '<em style="opacity: 0.5;">žádný vlastní font</em>';
+    return;
+  }
+  el.innerHTML = state.fonts.map(f => `• ${escapeHtml(f.family)}`).join('<br>');
+}
+
+// === EXPORT ===
+document.getElementById('btnExportPNG').addEventListener('click', () => {
+  state.selectedId = null;
+  render();
+  const a = document.createElement('a');
+  a.download = `obasketu-vysledek-${Date.now()}.png`;
+  a.href = canvas.toDataURL('image/png');
+  a.click();
+  toast('PNG exportováno');
+});
+
+document.getElementById('btnExportProject').addEventListener('click', () => {
+  const payload = {
+    version: 1,
+    league: state.league,
+    layers: state.layers,
+    leagues: state.leagues,
+    assets: state.assets,
+    fonts: state.fonts,
+  };
+  const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.download = `obasketu-projekt-${Date.now()}.json`;
+  a.href = url; a.click();
+  URL.revokeObjectURL(url);
+  toast('Projekt uložen jako JSON');
+});
+
+document.getElementById('btnImportProject').addEventListener('click', () => {
+  const input = document.createElement('input');
+  input.type = 'file'; input.accept = '.json,application/json';
+  input.onchange = async () => {
+    const file = input.files[0]; if (!file) return;
+    const text = await file.text();
+    try {
+      const data = JSON.parse(text);
+      state.league = data.league || 'nbl';
+      state.layers = data.layers || [];
+      state.leagues = { ...state.leagues, ...(data.leagues || {}) };
+      state.assets = { ...state.assets, ...(data.assets || {}) };
+      // re-register fonts
+      state.fonts = [];
+      for (const f of (data.fonts || [])) {
+        try {
+          const ff = new FontFace(f.family, `url(${f.dataUrl})`);
+          await ff.load();
+          document.fonts.add(ff);
+          state.fonts.push(f);
+        } catch {}
+      }
+      document.getElementById('leagueSelect').value = state.league;
+      renderLeagueSwatches();
+      renderLayerList();
+      renderRightPanel();
+      renderFontList();
+      render();
+      toast('Projekt načten');
+    } catch (err) {
+      toast('Chyba při čtení projektu', true);
+    }
+  };
+  input.click();
+});
+
+// === ZOOM ===
+function applyZoom() {
+  canvas.style.width = (W * state.zoom) + 'px';
+  canvas.style.height = (H * state.zoom) + 'px';
+  document.getElementById('zoomVal').textContent = Math.round(state.zoom * 100) + '%';
+}
+function fitZoom() {
+  const area = document.getElementById('canvasArea');
+  const padding = 40;
+  const sx = (area.clientWidth - padding) / W;
+  const sy = (area.clientHeight - padding) / H;
+  state.zoom = Math.min(sx, sy);
+  applyZoom();
+}
+document.getElementById('zoomIn').addEventListener('click', () => { state.zoom *= 1.15; applyZoom(); });
+document.getElementById('zoomOut').addEventListener('click', () => { state.zoom /= 1.15; applyZoom(); });
+document.getElementById('zoomFit').addEventListener('click', fitZoom);
+document.getElementById('zoom100').addEventListener('click', () => { state.zoom = 1; applyZoom(); });
+window.addEventListener('resize', fitZoom);
+
+// === TOAST ===
+let toastTimer;
+function toast(msg, isError) {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.style.borderColor = isError ? 'var(--danger)' : 'var(--border-strong)';
+  el.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.classList.remove('show'), 2200);
+}
+
+// === MOBILE PANEL TOGGLES ===
+const leftPanel = document.querySelector('.left-panel');
+const rightPanel = document.querySelector('.right-panel');
+const backdrop = document.getElementById('panelBackdrop');
+
+function closePanels() {
+  leftPanel.classList.remove('open');
+  rightPanel.classList.remove('open');
+  backdrop.classList.remove('show');
+}
+document.getElementById('toggleLeft').addEventListener('click', () => {
+  rightPanel.classList.remove('open');
+  leftPanel.classList.toggle('open');
+  backdrop.classList.toggle('show', leftPanel.classList.contains('open'));
+});
+document.getElementById('toggleRight').addEventListener('click', () => {
+  leftPanel.classList.remove('open');
+  rightPanel.classList.toggle('open');
+  backdrop.classList.toggle('show', rightPanel.classList.contains('open'));
+});
+backdrop.addEventListener('click', closePanels);
+
+// On mobile, auto-open right panel when selecting a layer
+const _origSelectLayer = selectLayer;
+selectLayer = function(id) {
+  _origSelectLayer(id);
+  if (id && window.innerWidth <= 900) {
+    leftPanel.classList.remove('open');
+    rightPanel.classList.add('open');
+    backdrop.classList.add('show');
+  }
+};
+
+// === AUTO-SAVE TO localStorage ===
+// Saves everything EXCEPT main player photo (those are per-match, would bloat storage).
+// localStorage limit ~5-10 MB. Backgrounds + logos + fonts fit comfortably.
+const STORAGE_KEY = 'obasketu_editor_v1';
+
+function saveToLocal() {
+  try {
+    // Clone assets but strip the main photo (not persisted)
+    const persistedAssets = { ...state.assets, mainPhoto: null };
+    const payload = {
+      version: 1,
+      savedAt: Date.now(),
+      league: state.league,
+      layers: state.layers,
+      leagues: state.leagues,
+      assets: persistedAssets,
+      fonts: state.fonts,
+    };
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
+  } catch (err) {
+    // QuotaExceededError — most likely too many fonts/bg images
+    if (err.name === 'QuotaExceededError' || err.code === 22) {
+      toast('Storage je plný — smaž nepoužívané fonty/pozadí', true);
+    } else {
+      console.warn('Auto-save selhal:', err);
+    }
+  }
+}
+
+async function loadFromLocal() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (!raw) return false;
+    const data = JSON.parse(raw);
+    if (!data || data.version !== 1) return false;
+
+    state.league = data.league || 'nbl';
+    if (data.layers && data.layers.length) state.layers = data.layers;
+    if (data.leagues) state.leagues = { ...state.leagues, ...data.leagues };
+    if (data.assets) state.assets = { ...state.assets, ...data.assets, mainPhoto: null };
+
+    // re-register fonts
+    state.fonts = [];
+    for (const f of (data.fonts || [])) {
+      try {
+        const ff = new FontFace(f.family, `url(${f.dataUrl})`);
+        await ff.load();
+        document.fonts.add(ff);
+        state.fonts.push(f);
+      } catch {}
+    }
+
+    // Reset nextId to avoid collisions with loaded layer IDs
+    const maxId = state.layers.reduce((m, l) => {
+      const n = parseInt(String(l.id).replace('L',''), 10);
+      return isFinite(n) && n > m ? n : m;
+    }, 0);
+    nextId = maxId + 1;
+
+    document.getElementById('leagueSelect').value = state.league;
+    return true;
+  } catch (err) {
+    console.warn('Načtení z localStorage selhalo:', err);
+    return false;
+  }
+}
+
+function clearLocal() {
+  if (!confirm('Opravdu smazat všechna uložená nastavení (pozadí, loga, fonty, layout)?\n\nTato akce je nevratná.')) return;
+  localStorage.removeItem(STORAGE_KEY);
+  toast('localStorage vyčištěn — obnov stránku');
+}
+
+// Debounced auto-save — fires 800ms after last change to avoid hammering storage
+let saveTimer;
+function scheduleSave() {
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(saveToLocal, 800);
+}
+
+// Hook into render: every render = something visual changed = worth saving
+const _origRender = render;
+render = function() {
+  _origRender();
+  scheduleSave();
+};
+
+// Add a "Vyčistit storage" button to topbar dynamically
+const clearBtn = document.createElement('button');
+clearBtn.className = 'action';
+clearBtn.textContent = 'Vyčistit storage';
+clearBtn.title = 'Smaže auto-saved nastavení v prohlížeči';
+clearBtn.addEventListener('click', clearLocal);
+document.getElementById('btnImportProject').before(clearBtn);
+
+// Storage usage indicator
+function updateStorageInfo() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    const sizeMB = raw ? (raw.length / 1024 / 1024).toFixed(2) : '0.00';
+    clearBtn.title = `Uloženo: ${sizeMB} MB (smaž pro reset)`;
+  } catch {}
+}
+setInterval(updateStorageInfo, 3000);
+
+// === INIT ===
+(async function init() {
+  const restored = await loadFromLocal();
+  renderLeagueSwatches();
+  renderLayerList();
+  renderRightPanel();
+  renderFontList();
+  fitZoom();
+  _origRender();
+  if (restored) toast('Nastavení obnoveno z prohlížeče');
+  updateStorageInfo();
+})();
+</script>
+</body>
+</html>
