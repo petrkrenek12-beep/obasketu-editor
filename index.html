@@ -360,6 +360,10 @@
         Logo oBasketu (footer)
         <input type="file" id="uploadFooterLogo" accept="image/*">
       </label>
+      <label class="upload-btn">
+        Vlastní hvězda (hráč zápasu)
+        <input type="file" id="uploadCustomStar" accept="image/*">
+      </label>
     </div>
   </div>
 
@@ -437,6 +441,7 @@ const state = {
     teamB: null,
     mainPhoto: null,
     footerLogo: null,
+    customStar: null,
   },
   fonts: [], // {family, dataUrl}
 };
@@ -464,12 +469,21 @@ function createDefaultLayers() {
       glowIntensity: 0.65, opacity: 0.95,
     },
     {
+      id: uid(), type: 'topShadow', name: 'Vrchní stín (čitelnost)', visible: true, locked: false,
+      from: 0, to: 0.25, color: '#000000', opacity: 0.65,
+    },
+    {
       id: uid(), type: 'image', name: 'Logo ligy/turnaj', visible: true, locked: false,
       x: 540, y: 100, width: 220, anchor: 'center', assetKey: 'leagueLogo', opacity: 1,
     },
     {
+      id: uid(), type: 'subtitleOrnament', name: 'Ornament podtitulu (čáry+tečka)', visible: true, locked: false,
+      x: 540, y: 200, lineLength: 80, lineGap: 320, lineThickness: 3,
+      dotRadius: 6, color: '#ff4d1a', useLeagueAccent: true, opacity: 1,
+    },
+    {
       id: uid(), type: 'text', name: 'Podtitul (SEMIFINÁLE • ZÁPAS X)', visible: true, locked: false,
-      x: 540, y: 200, text: 'SEMIFINÁLE  •  ZÁPAS 2', anchor: 'center',
+      x: 540, y: 200, text: 'SEMIFINÁLE        ZÁPAS 2', anchor: 'center',
       fontFamily: 'system-ui', fontSize: 36, fontWeight: '500', color: '#ffffff',
       letterSpacing: 0.08, opacity: 0.95,
     },
@@ -504,8 +518,12 @@ function createDefaultLayers() {
       x: 90, y: 1220, width: 900, height: 1, color: '#ffffff', opacity: 0.4,
     },
     {
-      id: uid(), type: 'text', name: 'Hráč zápasu (★ + text)', visible: true, locked: false,
-      x: 540, y: 1265, text: '★  Tevin Olison (21 PTS, 2 REB, 4 AST)', anchor: 'center',
+      id: uid(), type: 'image', name: 'Hvězda (před textem)', visible: true, locked: false,
+      x: 390, y: 1265, width: 36, anchor: 'center', assetKey: 'customStar', opacity: 1,
+    },
+    {
+      id: uid(), type: 'text', name: 'Hráč zápasu (text)', visible: true, locked: false,
+      x: 565, y: 1265, text: 'Tevin Olison (21 PTS, 2 REB, 4 AST)', anchor: 'left',
       fontFamily: 'system-ui', fontSize: 30, fontWeight: '500', color: '#ffffff',
       italic: true,
     },
@@ -533,13 +551,48 @@ function render() {
 
 function drawLayer(layer) {
   switch (layer.type) {
-    case 'background': drawBackground(layer); break;
-    case 'photo':       drawPhoto(layer); break;
-    case 'fade':        drawFade(layer); break;
-    case 'image':       drawImageLayer(layer); break;
-    case 'text':        drawText(layer); break;
-    case 'divider':     drawDivider(layer); break;
+    case 'background':       drawBackground(layer); break;
+    case 'photo':            drawPhoto(layer); break;
+    case 'fade':             drawFade(layer); break;
+    case 'topShadow':        drawTopShadow(layer); break;
+    case 'subtitleOrnament': drawSubtitleOrnament(layer); break;
+    case 'image':            drawImageLayer(layer); break;
+    case 'text':             drawText(layer); break;
+    case 'divider':          drawDivider(layer); break;
   }
+}
+
+function drawTopShadow(layer) {
+  // Mirror of bottom fade: black/dark shadow from top of canvas down,
+  // boosts legibility of league logo + subtitle that sit on top of the photo.
+  const fromY = H * layer.from;
+  const toY = H * layer.to;
+  const grad = ctx.createLinearGradient(0, fromY, 0, toY);
+  grad.addColorStop(0, hexToRGBA(layer.color, 1));
+  grad.addColorStop(0.5, hexToRGBA(layer.color, 0.55));
+  grad.addColorStop(1, hexToRGBA(layer.color, 0));
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, fromY, W, toY - fromY + 1);
+}
+
+function drawSubtitleOrnament(layer) {
+  // Two short horizontal lines either side of center + a center dot,
+  // matches Petr's "— ● —" style above the SEMIFINÁLE text.
+  const color = layer.useLeagueAccent ? state.leagues[state.league].color2 : layer.color;
+  const cx = layer.x;
+  const cy = layer.y;
+  const gap = layer.lineGap || 320;
+  const len = layer.lineLength || 80;
+  const t = layer.lineThickness || 3;
+  ctx.fillStyle = color;
+  // left line
+  ctx.fillRect(cx - gap/2 - len, cy - t/2, len, t);
+  // right line
+  ctx.fillRect(cx + gap/2,       cy - t/2, len, t);
+  // center dot
+  ctx.beginPath();
+  ctx.arc(cx, cy, layer.dotRadius || 6, 0, Math.PI * 2);
+  ctx.fill();
 }
 
 function drawBackground(layer) {
@@ -762,6 +815,13 @@ function getLayerBounds(layer) {
   if (layer.type === 'divider') {
     return { x: layer.x, y: layer.y - 8, w: layer.width, h: Math.max(16, layer.height + 16) };
   }
+  if (layer.type === 'subtitleOrnament') {
+    const gap = layer.lineGap || 320;
+    const len = layer.lineLength || 80;
+    const totalW = gap + len * 2;
+    const h = Math.max(20, (layer.dotRadius || 6) * 2 + 12);
+    return { x: layer.x - totalW/2, y: layer.y - h/2, w: totalW, h };
+  }
   if (layer.type === 'photo') {
     const url = state.assets[layer.assetKey];
     const img = getCachedImage(url);
@@ -934,7 +994,7 @@ function renderRightPanel() {
       <div class="prop-row"><label>Název</label><input type="text" data-prop="name" value="${escapeHtml(layer.name)}"></div>
   `;
 
-  if (layer.type !== 'background' && layer.type !== 'fade') {
+  if (layer.type !== 'background' && layer.type !== 'fade' && layer.type !== 'topShadow') {
     html += `
       <div class="prop-row"><label>Pozice X</label><input type="number" data-prop="x" value="${Math.round(layer.x)}"></div>
       <div class="prop-row"><label>Pozice Y</label><input type="number" data-prop="y" value="${Math.round(layer.y)}"></div>
@@ -981,6 +1041,7 @@ function renderRightPanel() {
           <option value="teamA" ${layer.assetKey=='teamA'?'selected':''}>Logo tým A</option>
           <option value="teamB" ${layer.assetKey=='teamB'?'selected':''}>Logo tým B</option>
           <option value="footerLogo" ${layer.assetKey=='footerLogo'?'selected':''}>Logo footer</option>
+          <option value="customStar" ${layer.assetKey=='customStar'?'selected':''}>Vlastní hvězda</option>
         </select>
       </div>
     </div>
@@ -1012,6 +1073,27 @@ function renderRightPanel() {
       <div class="prop-row"><label>Od (%)</label><input type="range" min="0" max="1" step="0.01" data-prop="from" value="${layer.from}"></div>
       <div class="prop-row"><label>Do (%)</label><input type="range" min="0" max="1" step="0.01" data-prop="to" value="${layer.to}"></div>
       <div class="hint">Fade vezme texturu z nahraného pozadí ligy a aplikuje ji jako přechod přes fotku. Pokud pozadí ligy není nahrané, použije se náhradní barva.</div>
+    `;
+  }
+
+  if (layer.type === 'topShadow') {
+    html += `
+      <div class="prop-row"><label>Od (%)</label><input type="range" min="0" max="1" step="0.01" data-prop="from" value="${layer.from}"></div>
+      <div class="prop-row"><label>Do (%)</label><input type="range" min="0" max="1" step="0.01" data-prop="to" value="${layer.to}"></div>
+      <div class="prop-row"><label>Barva</label><input type="color" data-prop="color" value="${layer.color}"></div>
+      <div class="hint">Tmavý přechod shora pro lepší čitelnost loga turnaje a podtitulu nad fotkou.</div>
+    `;
+  }
+
+  if (layer.type === 'subtitleOrnament') {
+    html += `
+      <div class="prop-row"><label>Délka čar</label><input type="number" data-prop="lineLength" value="${layer.lineLength}"></div>
+      <div class="prop-row"><label>Mezera</label><input type="number" data-prop="lineGap" value="${layer.lineGap}"></div>
+      <div class="prop-row"><label>Tloušťka</label><input type="number" data-prop="lineThickness" value="${layer.lineThickness}"></div>
+      <div class="prop-row"><label>Radius tečky</label><input type="number" data-prop="dotRadius" value="${layer.dotRadius}"></div>
+      <div class="prop-row"><label>Barva ligy</label><input type="checkbox" data-prop="useLeagueAccent" ${layer.useLeagueAccent?'checked':''}></div>
+      <div class="prop-row"><label>Vlastní barva</label><input type="color" data-prop="color" value="${layer.color}"></div>
+      <div class="hint">Oranžové čárky + tečka jako separátor kolem textu "SEMIFINÁLE • ZÁPAS X".</div>
     `;
   }
 
@@ -1140,7 +1222,7 @@ document.getElementById('uploadBg').addEventListener('change', async (e) => {
   renderLeagueSwatches(); render(); toast(`Pozadí nastaveno pro ${state.leagues[state.league].name}`);
 });
 
-['leagueLogo','teamA','teamB','mainPhoto','footerLogo'].forEach(slot => {
+['leagueLogo','teamA','teamB','mainPhoto','footerLogo','customStar'].forEach(slot => {
   const id = 'upload' + slot[0].toUpperCase() + slot.slice(1);
   // map our slot names → input ids
   const mapping = {
@@ -1149,6 +1231,7 @@ document.getElementById('uploadBg').addEventListener('change', async (e) => {
     teamB: 'uploadTeamB',
     mainPhoto: 'uploadMainPhoto',
     footerLogo: 'uploadFooterLogo',
+    customStar: 'uploadCustomStar',
   };
   const elId = mapping[slot];
   const el = document.getElementById(elId);
